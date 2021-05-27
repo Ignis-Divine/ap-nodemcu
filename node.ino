@@ -3,24 +3,25 @@
 #include <ArduinoJson.h>
 #include <Ethernet.h>
 #include <SPI.h>
+#define TRIGGER_PIN  5
+#define ECHO_PIN     4
+//#include "RestClient.h"
+#include "DHT.h"
+#define DHTPIN 14   //pin d5= sensor temperatura/humedad
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE,15);
 #define ARDUINOJSON_USE_DOUBLE 0
+int ledPIN = D1; //= Pin LED y Buzzer mismo pin
 
 //para conexion a red
 const char* const ssid = "FIBRATVSJR13324";
 const char* const password = "wlan8cf6a3";
 
 //variables de programa
-const int btn  = 16; //D0
-const int btn2 = 5; //D0
-String a="";
-String m="";
-int est1=0;
-int est2=0;
-int val1=0;
-int val2=0;
-int ant1=0;
-int ant2=0;
-int led =02;
+const int btn =16; //D0
+float h=0;
+float t=0;
+float s=0;
 byte mac[6];
 char buf[3];
 char buff[100];
@@ -30,6 +31,7 @@ void setup(){
 
   Serial.begin(115200);
   //establecer parametro wifi
+  pinMode(ledPIN , OUTPUT);
   WiFi.begin(ssid, password);
   //iniciar conexion
   while (WiFi.status() != WL_CONNECTED){
@@ -37,28 +39,36 @@ void setup(){
     Serial.println("Espere conectando...");
   }//Condicion Para Vincular Conexion
   Serial.println("** Conexion Establecida **");
+  dht.begin();
+  pinMode(TRIGGER_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(BUILTIN_LED, OUTPUT);
 }//Setup Parametros Consola y conexion.
 
 //Post's Para Bases de Datos.
-void post_msj(String a, String m){
+
+void post_temp(double h, double t, double s){
     //creacion de cliente http
-    HTTPClient http; 
+     WiFiClient client;
+    HTTPClient http;     
     //ruta "de api
-    http.begin("http://157.230.94.200:5050/nodemcu");
+    http.begin(client, "http://104.248.128.237:5050/nodemcu");
     http.addHeader("Content-Type", "application/json");
     http.setAuthorization(macAdd());
-    //Creacion de json
+    //creacion de json
     StaticJsonBuffer<200> jsonBuffer;
     char json[256];
     JsonObject& root = jsonBuffer.createObject();
-    root["B"] = a;
-    root["est"] = m;
+    root["humedad"] = h;
+    root["temperatura"] = t;
+    root["sonico"] = s;
     root.printTo(json, sizeof(json));
     Serial.println(json);
     //envio de solicitud
     int httpCode = http.POST(json);
     http.end(); //Close connection
-}//Post 
+}//Post Temperatura
+
 char * macAdd(){
   WiFi.macAddress(mac);
   txt="";
@@ -73,48 +83,24 @@ char * macAdd(){
   return buff;
 }//Conversion de MAC address de NodemCU
 
-void boton_1(){
-  if (est1==1){
-    a="1";
-    m="B1 Activado";
-      post_msj(a,m);     
-    } //Datos Subir a Base de Datos     
-}
-void boton_2(){
-  if(est2==1){
-      a="2";
-      m="B2 Activado";
-      post_msj(a,m);
-    }
-}
 void loop(){
   //enviar datos mientras este conectado
   if (WiFi.status() == WL_CONNECTED){
-    val1= digitalRead(btn);
-    val2= digitalRead(btn2);
-    digitalWrite(led,HIGH);
-    digitalWrite(led,LOW);  
-//boton1
-    if ((val1 == HIGH && ant1== LOW)){
-      est1=1;
-    }
-    else{
-      est1=0;
-    } 
-    ant1 = val1;
-   if(est1 == 1){
-    boton_1();
-   }
-//boton2
-   if ((val2 == HIGH && ant2== LOW)){
-      est2=1;
-    }
-    else{
-      est2=0;
-    } 
-    ant2 = val2;
-   if(est2 == 1){
-    boton_2();
-   }
+    h = dht.readHumidity();
+    t = dht.readTemperature(true);
+    t=(t-32);
+    t=t/(1.800);
+    long duration,s;
+  digitalWrite(TRIGGER_PIN, LOW);  // Added this line
+  delayMicroseconds(2); // Added this line
+  digitalWrite(TRIGGER_PIN, HIGH);
+  delayMicroseconds(10); // Added this line
+  digitalWrite(TRIGGER_PIN, LOW);
+  duration = pulseIn(ECHO_PIN, HIGH);
+  s = (duration/2) / 29.1;
+  delay(7000);
+    post_temp(h,t,s);
+  
+
   }
 }
